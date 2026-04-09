@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Autocomplete</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f8f9fa;
+      color: #202124;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 15vh;
+      margin: 0;
+    }
+    h2 {
+      font-weight: 400;
+      font-size: 28px;
+      margin-bottom: 25px;
+      color: #5f6368;
+    }
+    .search-container {
+      position: relative;
+      width: 100%;
+      max-width: 500px;
+    }
+    .search-box {
+      width: 100%;
+      padding: 14px 22px;
+      font-size: 16px;
+      border: 1px solid #dfe1e5;
+      border-radius: 24px;
+      box-shadow: 0 1px 6px rgba(32, 33, 36, 0.1);
+      box-sizing: border-box;
+      outline: none;
+      transition: box-shadow 0.2s;
+    }
+    .search-box:focus {
+      box-shadow: 0 1px 6px rgba(32, 33, 36, 0.28);
+      border-color: rgba(223, 225, 229, 0);
+    }
+    .results-dropdown {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      width: 100%;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(32, 33, 36, 0.15);
+      border: 1px solid #eee;
+      max-height: 300px;
+      overflow-y: auto;
+      display: none;
+      box-sizing: border-box;
+      z-index: 1000;
+      padding: 8px 0;
+    }
+    .results-dropdown.active {
+      display: block;
+    }
+    .result-item {
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 15px;
+      color: #212529;
+    }
+    .result-item:hover {
+      background: #f1f3f4;
+    }
+    .highlight {
+      font-weight: bold;
+      color: #1a73e8; /* Standard Google Blue */
+    }
+    .no-results {
+      padding: 10px 20px;
+      color: #5f6368;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Autocomplete Demo</h2>
+
+  <div class="search-container">
+    <input type="text" class="search-box" id="searchInput" placeholder="Search..." autocomplete="off">
+    <div class="results-dropdown" id="resultsBox"></div>
+  </div>
+
+  <script>
+    const searchInput = document.getElementById('searchInput');
+    const resultsBox = document.getElementById('resultsBox');
+
+    let debounceTimer;
+
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim();
+      
+      clearTimeout(debounceTimer);
+      
+      if (query.length === 0) {
+        resultsBox.classList.remove('active');
+        resultsBox.innerHTML = '';
+        return;
+      }
+
+      debounceTimer = setTimeout(async () => {
+        try {
+          const res = await fetch(`/autocomplete?q=${encodeURIComponent(query)}`);
+          const json = await res.json();
+          
+          if (json.data && json.data.length > 0) {
+            renderResults(json.data, query);
+            resultsBox.classList.add('active');
+          } else {
+            resultsBox.innerHTML = '<div class="no-results">No matches found</div>';
+            resultsBox.classList.add('active');
+          }
+        } catch (err) {
+          console.error("Search failed", err);
+        }
+      }, 150);
+    });
+
+    function renderResults(results, query) {
+      resultsBox.innerHTML = '';
+      
+      const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${safeQuery})`, "gi");
+
+      results.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'result-item';
+        
+        div.innerHTML = item.replace(regex, "<span class='highlight'>$1</span>");
+        div.addEventListener('click', () => {
+          searchInput.value = item;
+          resultsBox.classList.remove('active');
+        });
+        
+        resultsBox.appendChild(div);
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      if (!searchInput.contains(e.target) && !resultsBox.contains(e.target)) {
+        resultsBox.classList.remove('active');
+      }
+    });
+
+    // Auto focus the input automatically mimicking a real search page
+    window.onload = () => searchInput.focus();
+  </script>
+</body>
+</html>
