@@ -1,6 +1,6 @@
 const http = require('http');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const HOST = 'localhost';
 const TOTAL_REQUESTS = 1000;
 
@@ -46,7 +46,8 @@ function makeRequest(query) {
 
 async function runBenchmark() {
   console.log(`Starting benchmark of ${TOTAL_REQUESTS} requests against http://${HOST}:${PORT}/autocomplete...`);
-  
+  const startedAt = performance.now();
+
   let hits = 0;
   let misses = 0;
   let totalLatency = 0;
@@ -83,6 +84,8 @@ async function runBenchmark() {
 
   const avgLatency = successCount > 0 ? (totalLatency / successCount).toFixed(2) : 0;
   const hitRate = successCount > 0 ? ((hits / (hits + misses)) * 100).toFixed(2) : 0;
+  const elapsedSec = (performance.now() - startedAt) / 1000;
+  const requestsPerSec = elapsedSec > 0 ? (successCount / elapsedSec).toFixed(2) : 0;
   
   // Sort latencies to find percentiles
   latencies.sort((a, b) => a - b);
@@ -92,6 +95,8 @@ async function runBenchmark() {
 
   console.log('\n================ BENCHMARK RESULTS ================');
   console.log(`Total Requests:      ${TOTAL_REQUESTS}`);
+  console.log(`Total Time:          ${elapsedSec.toFixed(2)} s`);
+  console.log(`Requests/sec:        ${requestsPerSec}`);
   console.log(`Successful:          ${successCount}`);
   console.log(`Failed:              ${failCount}`);
   console.log(`Average Latency:     ${avgLatency} ms`);

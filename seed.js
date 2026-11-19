@@ -11,12 +11,20 @@ async function seed() {
   console.log('Cleared existing items from MongoDB');
 
   // Read dictionary words
-  const data = fs.readFileSync('/usr/share/dict/words', 'utf-8');
+  const wordsFile = process.argv[2] || process.env.WORDS_FILE || '/usr/share/dict/words';
+  const data = fs.readFileSync(wordsFile, 'utf-8');
   const words = data.split('\n').map(w => w.trim()).filter(w => w.length > 0);
-  
-  // Seed 50,000 words
+
+  // Seed 50,000 words, spread evenly over the whole list so all prefixes are covered
   const limit = 50000;
-  const selectedWords = words.slice(0, limit);
+  const selectedWords = [];
+  if (words.length <= limit) {
+    selectedWords.push(...words);
+  } else {
+    for (let i = 0; i < limit; i++) {
+      selectedWords.push(words[Math.floor((i * words.length) / limit)]);
+    }
+  }
   
   const documents = selectedWords.map((word, index) => ({
     itemId: index + 1,
