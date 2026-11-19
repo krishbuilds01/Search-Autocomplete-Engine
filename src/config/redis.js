@@ -17,6 +17,10 @@ client.on('error', (err) => {
 
 let isConnected = false;
 
+client.on('end', () => {
+  isConnected = false;
+});
+
 client.connect().then(() => {
   console.log('Redis Connected');
   isConnected = true;

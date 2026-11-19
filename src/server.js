@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
@@ -45,8 +46,7 @@ const swaggerDocument = {
 
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-// Redirect root to docs
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Load items from DB into Trie at startup
 const initializeTrie = async () => {
@@ -61,8 +61,17 @@ const initializeTrie = async () => {
   }
 };
 
-// Start the server and db operations
-connectDB().then(initializeTrie);
+const clearAutocompleteCache = async () => {
+  if (!isRedisConnected()) return;
+  try {
+    const keys = await redisClient.keys('ac:*');
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+    }
+  } catch (error) {
+    console.error('Redis cache clear error', error);
+  }
+};
 
 // --- APIs ---
 
@@ -73,7 +82,7 @@ app.get('/autocomplete', async (req, res) => {
     return res.status(400).json({ error: 'Missing query parameter q' });
   }
 
-  const cacheKey = `ac:${q}`;
+  const cacheKey = `ac:${trie.normalize(q, false)}`;
 
   // 1. Check Cache
   if (isRedisConnected()) {
@@ -90,8 +99,8 @@ app.get('/autocomplete', async (req, res) => {
   // 2. Query Trie
   const ids = trie.find(q);
   
-  // 3. Resolve actual words
-  const results = ids.map(id => trie.lookup.get(id)).filter(v => v);
+  // 3. Resolve actual words (top 20)
+  const results = ids.slice(0, 20).map(id => trie.lookup.get(id)).filter(v => v);
 
   // 4. Update Cache (valid for 60 seconds)
   if (isRedisConnected()) {
@@ -105,23 +114,37 @@ app.get('/autocomplete', async (req, res) => {
   return res.json({ source: 'trie', data: results });
 });
 
-app.post('/items', async (req, res) => {
+const requireAdmin = (req, res, next) => {
+  const token = process.env.ADMIN_TOKEN;
+  if (token && req.get('x-admin-token') !== token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+};
+
+app.post('/items', requireAdmin, async (req, res) => {
   const { itemId, value } = req.body;
   
   if (itemId === undefined || !value) {
     return res.status(400).json({ error: 'Missing itemId or value in body' });
   }
 
+  const id = Number(itemId);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: 'itemId must be an integer' });
+  }
+
   try {
     // Save to DB
     const newItem = await Item.findOneAndUpdate(
-       { itemId },
+       { itemId: id },
        { value },
        { upsert: true, returnDocument: 'after' }
     );
-    
+
     // Update Trie
-    trie.insert(itemId, value);
+    trie.insert(id, value);
+    await clearAutocompleteCache();
 
     res.status(201).json({ message: 'Item saved', item: newItem });
   } catch (error) {
@@ -130,13 +153,14 @@ app.post('/items', async (req, res) => {
   }
 });
 
-app.delete('/items/:itemId', async (req, res) => {
+app.delete('/items/:itemId', requireAdmin, async (req, res) => {
   const itemId = parseInt(req.params.itemId, 10);
   
   try {
     const item = await Item.findOneAndDelete({ itemId });
     if (item) {
       trie.remove(itemId);
+      await clearAutocompleteCache();
       res.json({ message: 'Item deleted' });
     } else {
       res.status(404).json({ error: 'Item not found' });
@@ -148,6 +172,11 @@ app.delete('/items/:itemId', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+
+connectDB()
+  .then(initializeTrie)
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  });
