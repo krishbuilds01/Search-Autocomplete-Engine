@@ -1,8 +1,20 @@
-version: '3.8'
-
 services:
+  app:
+    build: .
+    container_name: autocomplete-app
+    ports:
+      - "3000:3000"
+    environment:
+      MONGO_URI: mongodb://mongodb:27017/autocomplete_db
+      REDIS_URL: redis://redis:6379
+      PORT: 3000
+    depends_on:
+      - mongodb
+      - redis
+    restart: unless-stopped
+
   mongodb:
-    image: mongo:latest
+    image: mongo:7
     container_name: autocomplete-mongodb
     ports:
       - "27017:27017"
@@ -11,11 +23,21 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:alpine
+    image: redis:7
     container_name: autocomplete-redis
     ports:
       - "6379:6379"
     restart: unless-stopped
+
+  seed:
+    build: .
+    command: node seed.js data/frequent-words.txt
+    environment:
+      MONGO_URI: mongodb://mongodb:27017/autocomplete_db
+    depends_on:
+      - mongodb
+    profiles:
+      - seed
 
 volumes:
   mongodb_data:
