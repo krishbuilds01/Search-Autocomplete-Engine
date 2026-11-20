@@ -29,3 +29,9 @@ jobs:
         env:
           MONGO_URI: mongodb://localhost:27017/autocomplete_test
           REDIS_URL: redis://localhost:6379
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t autocomplete .
