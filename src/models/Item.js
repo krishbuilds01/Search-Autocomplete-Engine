@@ -9,6 +9,10 @@ const itemSchema = new mongoose.Schema({
   value: { 
     type: String, 
     required: true 
+  },
+  searchCount: {
+    type: Number,
+    default: 0
   }
 });
 
