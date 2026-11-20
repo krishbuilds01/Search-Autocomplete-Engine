@@ -1,5 +1,7 @@
 # High-Performance Autocomplete Service
 
+**Live demo:** https://search-autocomplete-engine.onrender.com
+
 A robust, in-memory autocomplete engine built with Node.js and Express. This project implements a custom Trie data structure capable of predicting string prefixes efficiently (modeled after thread-safe parsing algorithms previously developed in Go). 
 
 It guarantees millisecond response times by resolving active queries directly in memory and utilizing Redis for localized result caching, whilst persisting the origin dataset reliably inside a dynamic MongoDB instance.
