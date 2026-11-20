@@ -1,77 +1,79 @@
-# High-Performance Autocomplete Service
+# Search Autocomplete Engine
 
 **Live demo:** https://search-autocomplete-engine.onrender.com
 
-A robust, in-memory autocomplete engine built with Node.js and Express. This project implements a custom Trie data structure capable of predicting string prefixes efficiently (modeled after thread-safe parsing algorithms previously developed in Go). 
+[![CI](https://github.com/krishbuilds01/Search-Autocomplete-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/krishbuilds01/Search-Autocomplete-Engine/actions/workflows/ci.yml)
 
-It guarantees millisecond response times by resolving active queries directly in memory and utilizing Redis for localized result caching, whilst persisting the origin dataset reliably inside a dynamic MongoDB instance.
+An autocomplete API in Node.js and Express. You type a prefix, it returns matching words ranked by how often they get picked, the way real search boxes behave. Results come from a custom Trie held in memory, with Redis caching in front of it and MongoDB as the store.
 
-## Tech Stack
+![Demo](docs/demo.png)
 
-* **Backend Environment**: Node.js
-* **API Framework**: Express.js
-* **Database Layer**: MongoDB (managed via Mongoose ORM)
-* **Caching Layer**: Redis (managed via the `redis` client)
-* **Core Data Structure**: Custom Trie Structure (In-memory JavaScript algorithmic composition providing ultra-fast node routing and partial-suffix mapping)
-* **Live Documentation**: Swagger UI (`swagger-ui-express`)
+## What it does
 
----
+- Prefix search over 58,000+ words, served from an in-memory Trie
+- Results ranked by popularity, not alphabet. Every selection is counted, and words people pick rise to the top
+- Starting popularity comes from a public word frequency list (google-10000-english), so common words rank first from day one
+- Typo tolerance: if a prefix matches nothing, it falls back to edit-distance search (try `wrok` or `computter`)
+- Redis cache with a 60 second TTL. When a word is picked, only the cache keys for its prefixes are cleared, so the new ranking shows up at once
+- Rate limiting on the search and tracking endpoints, plus an optional admin token for writes
+- Health and stats endpoints. Stats reports the live cache hit rate since startup
 
-## Architecture Overview
-1. **Bootstrapping**: Upon startup, the Express application queries MongoDB for all existing `Item` schemas. The server transforms the database records and pushes them straight into the memory-bound Trie structure.
-2. **Search Lookups (`GET`)**: When the API receives an autocomplete request via query parameter, it first checks Redis for an unexpired cached object. On a cache miss, the engine traces the query prefix through the Trie to extract ID keys, returning all known matching full strings.
-3. **Data Mutation (`POST/DELETE`)**: Inserting or wiping database records synchronizes frictionlessly across both the MongoDB storage and the active memory pool without needing a reboot.
+## Numbers
 
----
+Measured locally on a small VM (1.5 vCPU, Node 24, MongoDB and Redis on localhost, 50,000 words):
 
-## Getting Started
+- About 0.9 ms average latency for a single search
+- About 4,100 requests per second with 50 concurrent clients, zero errors
+- 98% cache hit rate on a repeated 20 query pool
 
-### Prerequisites
-* Make sure you have **Node.js** natively installed.
-* **MongoDB** must be running locally on the default port `27017`
-* *(Optional)* A **Redis** server running locally on default port `6379`. If Redis isn’t bound to your environment, the code falls back natively to bypass caching gracefully without crashing.
+These are local numbers on small hardware, not production benchmarks.
 
-### Installation
-1. Start by installing the project dependencies:
-   ```bash
-   cd autocomplete-node
-   npm install
-   ```
-2. Boot the API. (We've rigged the project with `nodemon` for active live-reloading):
-   ```bash
-   npm run dev
-   ```
+## How ranking works
 
-*(Alternatively for production use without reloading monitors: `npm start`)*
+Each word has a `searchCount`. It starts from the word's rank in the frequency list (the most common English word starts at 10,000) and goes up by 1 every time someone selects that word through `POST /track`. The Trie keeps the count next to each word and sorts matches by count first, then alphabetically. Counts live in MongoDB, so rankings survive restarts.
 
----
+The Trie also indexes the later words of multi-word entries, so searching `athletic` finds `grey athletic shorts`.
 
-## Interactive Documentation
+## API
 
-Forget the terminal. We've equipped the server with an integrated interactive Swagger endpoint.
-When `npm run dev` is running, pop open a browser and explore:
+| Endpoint | What it does |
+| --- | --- |
+| `GET /autocomplete?q=wor` | Suggestions for a prefix, ranked. Optional `limit` (default 20, max 50) |
+| `POST /track` | Body `{ "value": "work" }`. Records a selection and re-ranks |
+| `POST /items` | Add or update a word. Needs `x-admin-token` if `ADMIN_TOKEN` is set |
+| `DELETE /items/:itemId` | Remove a word |
+| `GET /health` | Status, item count, Redis state |
+| `GET /stats` | Request counts and cache hit rate since startup |
+| `GET /docs` | Swagger UI |
 
-👉 **http://localhost:3000/docs**
+## Run it
 
----
+With Docker (app, MongoDB and Redis together):
 
-### Manual API Usage (CURL Examples)
-
-**1. Create an Entry (`POST /items`)**
 ```bash
-curl -X POST http://localhost:3000/items \
-     -H "Content-Type: application/json" \
-     -d '{"itemId": 101, "value": "grey athletic shorts"}'
+docker compose up --build
+docker compose --profile seed run seed
 ```
 
-**2. Query Autocomplete Engine (`GET /autocomplete`)**
-Using the word 'grey', or partial matching.
+The seed profile loads the 10,000 word frequency list as a starter dataset. For the full 50,000 word dataset, pass a bigger dictionary file to `seed.js`.
+
+Without Docker:
+
 ```bash
-curl "http://localhost:3000/autocomplete?q=grey"
+npm install
+npm start
 ```
 
-**3. Delete an Entry (`DELETE /items`)**
-Targets the `itemId` reference provided previously. 
+Needs MongoDB on `localhost:27017`. Redis is optional; without it the API still works, just with no cache. Copy `.env.example` to `.env` to change ports, URLs or set an `ADMIN_TOKEN`.
+
+## Tests
+
 ```bash
-curl -X DELETE http://localhost:3000/items/101
+npm test
 ```
+
+Unit tests for the Trie (ranking, fuzzy search, weights) and integration tests that boot the real server and exercise the API end to end. CI runs both, plus a Docker build, on every push.
+
+## Stack
+
+Node.js, Express 5, MongoDB with Mongoose, Redis, vanilla JS demo page, Swagger UI.
