@@ -8,7 +8,8 @@ const itemSchema = new mongoose.Schema({
   },
   value: { 
     type: String, 
-    required: true 
+    required: true,
+    index: true
   },
   searchCount: {
     type: Number,

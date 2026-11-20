@@ -15,20 +15,37 @@ async function seed() {
   const data = fs.readFileSync(wordsFile, 'utf-8');
   const words = data.split('\n').map(w => w.trim()).filter(w => w.length > 0);
 
-  // Seed 50,000 words, spread evenly over the whole list so all prefixes are covered
+  // Frequent words come first: they are always included and carry a
+  // starting popularity weight from their rank (most frequent = 10000)
+  const frequentFile = process.env.FREQUENT_FILE || require('path').join(__dirname, 'data', 'frequent-words.txt');
+  let frequentWords = [];
+  try {
+    frequentWords = fs.readFileSync(frequentFile, 'utf-8')
+      .split('\n').map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
+  } catch (err) {
+    console.warn('Frequent words file not read, seeding without weights');
+  }
+  const weightByWord = new Map();
+  frequentWords.forEach((word, rank) => weightByWord.set(word, 10000 - rank));
+
+  // Seed 50,000 words: all frequent words, then spread evenly over the
+  // rest of the dictionary so all prefixes are covered
   const limit = 50000;
-  const selectedWords = [];
+  const selected = new Set(frequentWords);
   if (words.length <= limit) {
-    selectedWords.push(...words);
+    words.forEach(w => selected.add(w));
   } else {
-    for (let i = 0; i < limit; i++) {
-      selectedWords.push(words[Math.floor((i * words.length) / limit)]);
+    const remaining = limit - selected.size;
+    for (let i = 0; i < remaining; i++) {
+      selected.add(words[Math.floor((i * words.length) / remaining)]);
     }
   }
-  
+  const selectedWords = Array.from(selected).slice(0, limit);
+
   const documents = selectedWords.map((word, index) => ({
     itemId: index + 1,
-    value: word
+    value: word,
+    searchCount: weightByWord.get(word.toLowerCase()) || 0
   }));
 
   console.log(`Inserting ${documents.length} words...`);
